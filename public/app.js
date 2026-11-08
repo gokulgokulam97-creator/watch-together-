@@ -23,9 +23,16 @@ const chatInput = document.getElementById('chat-input');
 const sendChatBtn = document.getElementById('send-chat');
 
 let currentRoom = null;
-let isSyncing = false;
-let lastSyncTime = 0;
-const SYNC_THRESHOLD = 1.5; // seconds
+let peerConnection = null;
+let localStream = null;
+let isHost = false;
+
+const iceServers = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
 
 // Generate random room code
 function generateRoomCode() {
@@ -63,15 +70,116 @@ leaveBtn.addEventListener('click', () => {
   location.reload();
 });
 
-// Video file selection
-videoInput.addEventListener('change', (e) => {
+// Video file selection (Host only)
+videoInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
-  if (file) {
-    const url = URL.createObjectURL(file);
-    videoPlayer.src = url;
-    videoOverlay.classList.add('hidden');
-    videoPlayer.load();
+  if (!file) return;
+
+  isHost = true;
+  const url = URL.createObjectURL(file);
+  videoPlayer.src = url;
+  videoOverlay.classList.add('hidden');
+  videoPlayer.load();
+
+  // Capture stream from video element
+  if (videoPlayer.captureStream) {
+    localStream = videoPlayer.captureStream();
+  } else if (videoPlayer.mozCaptureStream) {
+    localStream = videoPlayer.mozCaptureStream();
   }
+
+  // Notify others that host has a video
+  socket.emit('host-ready');
+});
+
+// Create peer connection
+async function createPeerConnection() {
+  peerConnection = new RTCPeerConnection(iceServers);
+
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit('webrtc-ice-candidate', { candidate: event.candidate });
+    }
+  };
+
+  peerConnection.ontrack = (event) => {
+    videoPlayer.srcObject = event.streams[0];
+    videoOverlay.classList.add('hidden');
+  };
+
+  if (localStream) {
+    localStream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, localStream);
+    });
+  }
+}
+
+// WebRTC signaling
+socket.on('webrtc-offer', async (data) => {
+  await createPeerConnection();
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+  socket.emit('webrtc-answer', { answer });
+});
+
+socket.on('webrtc-answer', async (data) => {
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+});
+
+socket.on('webrtc-ice-candidate', async (data) => {
+  if (peerConnection) {
+    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+  }
+});
+
+socket.on('host-ready', async () => {
+  if (!isHost && !peerConnection) {
+    // Guest waits for offer
+  }
+});
+
+// When host has stream and someone joins, send offer
+socket.on('user-list', async (users) => {
+  const count = users.length;
+  userCountEl.textContent = `${count} watching`;
+  document.getElementById('users-online').textContent = `${count} online`;
+
+  if (isHost && localStream && count > 1 && !peerConnection) {
+    await createPeerConnection();
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('webrtc-offer', { offer });
+  }
+});
+
+// Play/Pause (host controls)
+function togglePlay() {
+  if (videoPlayer.paused) {
+    videoPlayer.play();
+    playPauseBtn.textContent = '⏸';
+  } else {
+    videoPlayer.pause();
+    playPauseBtn.textContent = '▶';
+  }
+  socket.emit('video-action', {
+    playing: !videoPlayer.paused,
+    currentTime: videoPlayer.currentTime
+  });
+}
+
+playPauseBtn.addEventListener('click', togglePlay);
+videoPlayer.addEventListener('click', togglePlay);
+
+// Seek
+progressBar.addEventListener('click', (e) => {
+  const rect = progressBar.getBoundingClientRect();
+  const percent = (e.clientX - rect.left) / rect.width;
+  videoPlayer.currentTime = percent * videoPlayer.duration;
+  socket.emit('video-action', {
+    playing: !videoPlayer.paused,
+    currentTime: videoPlayer.currentTime
+  });
 });
 
 // Format time
@@ -82,7 +190,6 @@ function formatTime(seconds) {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-// Update progress
 function updateProgress() {
   if (videoPlayer.duration) {
     const percent = (videoPlayer.currentTime / videoPlayer.duration) * 100;
@@ -94,97 +201,17 @@ function updateProgress() {
 videoPlayer.addEventListener('timeupdate', updateProgress);
 videoPlayer.addEventListener('loadedmetadata', updateProgress);
 
-// Play/Pause
-function togglePlay() {
-  if (videoPlayer.paused) {
-    videoPlayer.play();
-    playPauseBtn.textContent = '⏸';
-    emitVideoAction();
-  } else {
-    videoPlayer.pause();
-    playPauseBtn.textContent = '▶';
-    emitVideoAction();
-  }
-}
-
-playPauseBtn.addEventListener('click', togglePlay);
-videoPlayer.addEventListener('click', togglePlay);
-
-// Seek
-progressBar.addEventListener('click', (e) => {
-  const rect = progressBar.getBoundingClientRect();
-  const percent = (e.clientX - rect.left) / rect.width;
-  videoPlayer.currentTime = percent * videoPlayer.duration;
-  emitVideoAction();
-});
-
-// Mobile optimizations
-document.addEventListener('touchstart', () => {}, { passive: true });
-
-// Prevent iOS zoom on double-tap
-let lastTouchEnd = 0;
-document.addEventListener('touchend', (e) => {
-  const now = Date.now();
-  if (now - lastTouchEnd <= 300) {
-    e.preventDefault();
-  }
-  lastTouchEnd = now;
-}, false);
-
-// Better fullscreen handling for mobile
-fullscreenBtn.addEventListener('click', () => {
-  const container = document.querySelector('.video-container');
-  if (document.fullscreenElement || document.webkitFullscreenElement) {
-    if (document.exitFullscreen) document.exitFullscreen();
-    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-  } else {
-    if (container.requestFullscreen) container.requestFullscreen();
-    else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
-    else if (videoPlayer.webkitEnterFullscreen) videoPlayer.webkitEnterFullscreen();
-  }
-});
-
-// Emit video state
-function emitVideoAction() {
-  if (!currentRoom || isSyncing) return;
-  
-  socket.emit('video-action', {
-    playing: !videoPlayer.paused,
-    currentTime: videoPlayer.currentTime
-  });
-}
-
-// Receive sync
+// Receive sync from host
 socket.on('video-sync', (state) => {
-  if (!videoPlayer.src) return;
-  
-  isSyncing = true;
-  
-  const timeDiff = Math.abs(videoPlayer.currentTime - state.currentTime);
-  
-  if (timeDiff > SYNC_THRESHOLD) {
+  if (Math.abs(videoPlayer.currentTime - state.currentTime) > 2) {
     videoPlayer.currentTime = state.currentTime;
   }
-  
   if (state.playing && videoPlayer.paused) {
     videoPlayer.play();
     playPauseBtn.textContent = '⏸';
   } else if (!state.playing && !videoPlayer.paused) {
     videoPlayer.pause();
     playPauseBtn.textContent = '▶';
-  }
-  
-  setTimeout(() => { isSyncing = false; }, 100);
-});
-
-// Initial room state
-socket.on('room-state', (state) => {
-  if (videoPlayer.src && state.currentTime > 0) {
-    videoPlayer.currentTime = state.currentTime;
-    if (state.playing) {
-      videoPlayer.play();
-      playPauseBtn.textContent = '⏸';
-    }
   }
 });
 
@@ -224,19 +251,16 @@ function sendMessage() {
 
 socket.on('chat-message', addChatMessage);
 
-socket.on('user-list', (users) => {
-  const count = users.length;
-  userCountEl.textContent = `${count} watching`;
-  document.getElementById('users-online').textContent = `${count} online`;
-});
-
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
-  
-  if (e.code === 'Space') {
-    e.preventDefault();
-    togglePlay();
+// Fullscreen
+fullscreenBtn.addEventListener('click', () => {
+  const container = document.querySelector('.video-container');
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  } else {
+    if (container.requestFullscreen) container.requestFullscreen();
+    else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
+    else if (videoPlayer.webkitEnterFullscreen) videoPlayer.webkitEnterFullscreen();
   }
 });
 

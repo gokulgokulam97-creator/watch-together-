@@ -54,6 +54,32 @@ io.on('connection', (socket) => {
     });
   });
 
+  // WebRTC signaling
+  socket.on('webrtc-offer', (data) => {
+    socket.to(socket.roomId).emit('webrtc-offer', {
+      offer: data.offer,
+      from: socket.id
+    });
+  });
+
+  socket.on('webrtc-answer', (data) => {
+    socket.to(socket.roomId).emit('webrtc-answer', {
+      answer: data.answer,
+      from: socket.id
+    });
+  });
+
+  socket.on('webrtc-ice-candidate', (data) => {
+    socket.to(socket.roomId).emit('webrtc-ice-candidate', {
+      candidate: data.candidate,
+      from: socket.id
+    });
+  });
+
+  socket.on('host-ready', () => {
+    socket.to(socket.roomId).emit('host-ready');
+  });
+
   socket.on('video-action', (action) => {
     if (!socket.roomId || !rooms[socket.roomId]) return;
 
