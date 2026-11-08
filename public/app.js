@@ -30,7 +30,22 @@ let isHost = false;
 const iceServers = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]
 };
 
@@ -120,6 +135,16 @@ async function createPeerConnection() {
   peerConnection.ontrack = (event) => {
     videoPlayer.srcObject = event.streams[0];
     videoOverlay.classList.add('hidden');
+    addChatMessage({ system: true, message: 'Receiving video' });
+  };
+
+  peerConnection.onconnectionstatechange = () => {
+    console.log('Connection state:', peerConnection.connectionState);
+    if (peerConnection.connectionState === 'connected') {
+      addChatMessage({ system: true, message: 'Video connected' });
+    } else if (peerConnection.connectionState === 'failed') {
+      addChatMessage({ system: true, message: 'Connection failed — try refreshing' });
+    }
   };
 
   if (localStream) {
