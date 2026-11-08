@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watch Together</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- Join Screen -->
+    <div id="join-screen" class="screen active">
+      <div class="join-card">
+        <div class="logo">
+          <span class="logo-icon">▶</span>
+          <h1>Watch Together</h1>
+        </div>
+        <p class="tagline">Premium cinema, shared in real time</p>
+        
+        <div class="form-group">
+          <label>Your Name</label>
+          <input type="text" id="username" placeholder="Enter your name" maxlength="20">
+        </div>
+        
+        <div class="form-group">
+          <label>Room Code</label>
+          <div class="room-input">
+            <input type="text" id="room-code" placeholder="Create or join a room" maxlength="12">
+            <button id="generate-room" class="icon-btn" title="Generate random room">↻</button>
+          </div>
+        </div>
+        
+        <button id="join-btn" class="primary-btn">Enter Room</button>
+        
+        <p class="hint">Both of you need the same movie downloaded on your phones</p>
+      </div>
+    </div>
+
+    <!-- Main Room -->
+    <div id="room-screen" class="screen">
+      <header class="room-header">
+        <div class="room-info">
+          <span class="room-label">Room</span>
+          <span id="current-room" class="room-code-display"></span>
+        </div>
+        <div class="header-right">
+          <div id="user-count" class="user-count">1 watching</div>
+          <button id="leave-btn" class="ghost-btn">Leave</button>
+        </div>
+      </header>
+
+      <main class="room-content">
+        <div class="video-section">
+          <div class="video-container">
+            <video id="video-player" playsinline>
+              <source src="" type="video/mp4">
+            </video>
+            <div id="video-overlay" class="video-overlay">
+              <div class="overlay-content">
+                <p>Select a movie to begin</p>
+                <label class="file-label">
+                  <input type="file" id="video-input" accept="video/*">
+                  <span class="file-btn">Choose Movie</span>
+                </label>
+              </div>
+            </div>
+            <div id="controls" class="controls">
+              <button id="play-pause" class="control-btn">▶</button>
+              <div class="progress-container">
+                <div class="progress-bar">
+                  <div id="progress" class="progress"></div>
+                </div>
+                <span id="time-display">0:00 / 0:00</span>
+              </div>
+              <button id="fullscreen" class="control-btn">⛶</button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="sidebar">
+          <div class="chat-section">
+            <div class="section-header">
+              <h3>Chat</h3>
+              <span id="users-online" class="online-indicator"></span>
+            </div>
+            <div id="chat-messages" class="chat-messages"></div>
+            <div class="chat-input">
+              <input type="text" id="chat-input" placeholder="Send a message..." maxlength="200">
+              <button id="send-chat" class="send-btn">Send</button>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
