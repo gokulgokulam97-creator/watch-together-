@@ -88,9 +88,24 @@ videoInput.addEventListener('change', async (e) => {
     localStream = videoPlayer.mozCaptureStream();
   }
 
-  // Notify others that host has a video
+  // Notify others that host has a video and start streaming if someone is already in the room
   socket.emit('host-ready');
+  
+  // If there are other users, start the offer immediately
+  setTimeout(() => {
+    if (isHost && localStream && !peerConnection) {
+      startStreaming();
+    }
+  }, 500);
 });
+
+async function startStreaming() {
+  if (peerConnection) return;
+  await createPeerConnection();
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+  socket.emit('webrtc-offer', { offer });
+}
 
 // Create peer connection
 async function createPeerConnection() {
@@ -146,10 +161,7 @@ socket.on('user-list', async (users) => {
   document.getElementById('users-online').textContent = `${count} online`;
 
   if (isHost && localStream && count > 1 && !peerConnection) {
-    await createPeerConnection();
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('webrtc-offer', { offer });
+    startStreaming();
   }
 });
 

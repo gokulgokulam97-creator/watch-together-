@@ -75,7 +75,6 @@ io.on('connection', (socket) => {
       from: socket.id
     });
   });
-
   socket.on('host-ready', () => {
     socket.to(socket.roomId).emit('host-ready');
   });
